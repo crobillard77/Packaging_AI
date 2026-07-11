@@ -1,0 +1,6 @@
+langgraph>=1.2.0
+langchain-core>=1.4.0
+pydantic>=2.7.0
+pywin32>=306
+cursor-sdk>=0.1.0
+langchain-openai>=0.3.0

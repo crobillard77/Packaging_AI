@@ -1,0 +1,9 @@
+{
+  "templates_dir": "Templates",
+  "dark_exe": "Tools/WIX/dark.exe",
+  "dark_cache_dir": ".cache/dark",
+  "output_dir": "output",
+  "confidence_threshold": 0.75,
+  "model": "composer-2.5",
+  "openai_model": "gpt-4o-mini"
+}
