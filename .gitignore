@@ -1,0 +1,17 @@
+.venv/
+output/
+.cache/
+fixtures/
+Installers_Examples/
+Tools/
+Template/
+__pycache__/
+*.pyc
+*.egg-info/
+.dist/
+dist/
+build/
+.env
+*.msi
+*.exe
+!Templates/**
