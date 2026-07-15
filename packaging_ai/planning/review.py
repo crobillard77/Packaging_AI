@@ -6,7 +6,8 @@ import re
 from typing import Any
 
 from packaging_ai.config import CONFIDENCE_THRESHOLD, PROJECT_ROOT
-from packaging_ai.models import InstallPlan, ReviewReport
+from packaging_ai.logutil import get_logger
+from packaging_ai.models import InstallPlan, ReviewReport, VulnerabilityReport
 from packaging_ai.psadt.requirements import (
     exe_metadata_incomplete,
     is_valid_uninstall,
@@ -14,8 +15,13 @@ from packaging_ai.psadt.requirements import (
     requirements_findings,
 )
 
+log = get_logger("planning.review")
 
-def review_install_plan(plan: InstallPlan) -> ReviewReport:
+
+def review_install_plan(
+    plan: InstallPlan,
+    vulnerability_report: VulnerabilityReport | None = None,
+) -> ReviewReport:
     """LLM/Cursor review when configured; otherwise heuristic review (FR-11).
 
     Priority:
@@ -27,9 +33,21 @@ def review_install_plan(plan: InstallPlan) -> ReviewReport:
     Invalid uninstall forces confidence below the clarification threshold.
     """
     req_text = load_psadt_requirements()
+    if vulnerability_report and vulnerability_report.findings:
+        # Include a compact vuln summary in the requirements context for LLM reviewers
+        top = vulnerability_report.findings[:5]
+        vuln_lines = "\n".join(
+            f"- {f.cve_id} [{f.severity}] {f.summary[:160]}" for f in top
+        )
+        req_text = (
+            f"{req_text}\n\nKnown vulnerability scan results "
+            f"(CRITICAL={vulnerability_report.critical_count}, "
+            f"HIGH={vulnerability_report.high_count}):\n{vuln_lines}\n"
+        )
 
     if os.environ.get("CURSOR_API_KEY"):
         try:
+            log.info("Running Cursor SDK review...")
             return _finalize(_cursor_review(plan, req_text), plan)
         except Exception as exc:
             heuristic = _heuristic_review(plan)
@@ -42,17 +60,22 @@ def review_install_plan(plan: InstallPlan) -> ReviewReport:
                 )
             else:
                 hint = f"Cursor review failed ({exc}); used heuristic review."
+            log.warning(hint)
             heuristic.findings.insert(0, hint)
             return _finalize(heuristic, plan)
 
     if os.environ.get("OPENAI_API_KEY"):
         try:
+            log.info("Running OpenAI review...")
             return _finalize(_llm_review(plan, req_text), plan)
         except Exception as exc:
             heuristic = _heuristic_review(plan)
-            heuristic.findings.insert(0, f"LLM review failed ({exc}); used heuristic review.")
+            hint = f"LLM review failed ({exc}); used heuristic review."
+            log.warning(hint)
+            heuristic.findings.insert(0, hint)
             return _finalize(heuristic, plan)
 
+    log.info("Running heuristic review (no CURSOR_API_KEY / OPENAI_API_KEY)")
     return _finalize(_heuristic_review(plan), plan)
 
 
@@ -268,9 +291,12 @@ def _llm_review(plan: InstallPlan, requirements_text: str) -> ReviewReport:
     from langchain_openai import ChatOpenAI
     from langchain_core.messages import HumanMessage, SystemMessage
 
-    from packaging_ai.config import DEFAULT_OPENAI_MODEL
+    from packaging_ai.config import DEFAULT_OPENAI_MODEL, DEFAULT_OPENAI_TEMPERATURE
 
-    llm = ChatOpenAI(model=DEFAULT_OPENAI_MODEL, temperature=0)
+    llm = ChatOpenAI(
+        model=DEFAULT_OPENAI_MODEL,
+        temperature=DEFAULT_OPENAI_TEMPERATURE,
+    )
     system = (
         "You are a senior Windows software packaging expert reviewing an Install_Plan "
         "for a PSADT 3.10.2 package. Enforce the PSADT script requirements provided by the user. "

@@ -5,5 +5,12 @@
   "output_dir": "output",
   "confidence_threshold": 0.75,
   "model": "composer-2.5",
-  "openai_model": "gpt-4o-mini"
+  "openai_model": "gpt-4o-mini",
+  "openai_temperature": 0,
+  "vuln_scan": true,
+  "vuln_block_on_critical": false,
+  "vuln_min_severity": "MEDIUM",
+  "nvd_api_key": "",
+  "log_level": "INFO",
+  "log_file": "logs/packaging_ai.log"
 }

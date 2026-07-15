@@ -56,6 +56,72 @@ DEFAULT_OPENAI_MODEL = str(
     or _CFG.get("openai_model")
     or "gpt-4o-mini"
 ).strip()
+DEFAULT_OPENAI_TEMPERATURE = float(
+    os.environ.get("PACKAGING_AI_OPENAI_TEMPERATURE")
+    or _CFG.get("openai_temperature")
+    or 0
+)
+
+# Vulnerability scan (NVD/OSV/Authenticode/hash; optional cve-bin-tool)
+VULN_SCAN_ENABLED = str(
+    os.environ.get("PACKAGING_AI_VULN_SCAN")
+    if os.environ.get("PACKAGING_AI_VULN_SCAN") is not None
+    else _CFG.get("vuln_scan", True)
+).strip().lower() not in {"0", "false", "no", "off"}
+VULN_BLOCK_ON_CRITICAL = str(
+    os.environ.get("PACKAGING_AI_VULN_BLOCK_ON_CRITICAL")
+    if os.environ.get("PACKAGING_AI_VULN_BLOCK_ON_CRITICAL") is not None
+    else _CFG.get("vuln_block_on_critical", False)
+).strip().lower() in {"1", "true", "yes", "on"}
+VULN_MIN_SEVERITY = str(
+    os.environ.get("PACKAGING_AI_VULN_MIN_SEVERITY")
+    or _CFG.get("vuln_min_severity")
+    or "MEDIUM"
+).strip().upper()
+NVD_API_KEY = (
+    os.environ.get("NVD_API_KEY") or str(_CFG.get("nvd_api_key") or "")
+).strip()
+
+# Logging
+LOG_LEVEL = str(
+    os.environ.get("PACKAGING_AI_LOG_LEVEL")
+    or _CFG.get("log_level")
+    or "INFO"
+).strip().upper()
+_LOG_FILE_RAW = (
+    os.environ.get("PACKAGING_AI_LOG_FILE")
+    if os.environ.get("PACKAGING_AI_LOG_FILE") is not None
+    else _CFG.get("log_file", "logs/packaging_ai.log")
+)
+LOG_FILE: Path | None
+if _LOG_FILE_RAW is None or str(_LOG_FILE_RAW).strip() in {"", "null", "none", "false", "off"}:
+    LOG_FILE = None
+else:
+    LOG_FILE = _resolve_path(str(_LOG_FILE_RAW).strip())
 
 INSTALLER_EXTENSIONS = {".msi", ".mst", ".exe", ".msp", ".msix", ".appx"}
 PRIMARY_INSTALLER_EXTENSIONS = {".msi", ".exe"}
+
+# HTTP API (Phase 3)
+API_HOST = str(
+    os.environ.get("PACKAGING_AI_API_HOST") or _CFG.get("api_host") or "127.0.0.1"
+).strip()
+API_PORT = int(os.environ.get("PACKAGING_AI_API_PORT") or _CFG.get("api_port") or 8000)
+_API_KEYS_RAW = (
+    os.environ.get("PACKAGING_AI_API_KEYS")
+    if os.environ.get("PACKAGING_AI_API_KEYS") is not None
+    else _CFG.get("api_keys", "")
+)
+API_KEYS: list[str] = [
+    k.strip()
+    for k in str(_API_KEYS_RAW or "").replace(";", ",").split(",")
+    if k.strip()
+]
+SQL_CONNECTION = (
+    os.environ.get("PACKAGING_AI_SQL_CONNECTION")
+    or str(_CFG.get("sql_connection") or "")
+).strip()
+JOB_STORE = str(
+    os.environ.get("PACKAGING_AI_JOB_STORE") or _CFG.get("job_store") or "sql"
+).strip().lower()
+# job_store: "sql" (default, requires SQL_CONNECTION) | "memory" (dev/smoke)

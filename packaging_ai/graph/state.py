@@ -7,6 +7,7 @@ from packaging_ai.models import (
     InstallPlan,
     PackageArtifacts,
     ReviewReport,
+    VulnerabilityReport,
 )
 
 
@@ -26,8 +27,11 @@ class PackagingState(TypedDict, total=False):
     output_dir: str
     auto_confirm: bool
     user_confirmed: bool
+    interactive: bool  # False for API: clarify pauses instead of input()
+    awaiting_clarification: bool
     detected_installers: list[DetectedInstaller]
     install_plan: InstallPlan | None
+    vulnerability_report: VulnerabilityReport | None
     review_findings: list[str]
     confidence_score: float
     user_clarifications: Annotated[list[str], _merge_clarifications]

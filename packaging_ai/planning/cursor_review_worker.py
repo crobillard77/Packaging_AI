@@ -55,7 +55,26 @@ def main() -> int:
             CursorAgentError,
             LocalAgentOptions,
         )
+    except ImportError as exc:
+        result_path.write_text(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": (
+                        f"cursor_sdk is not installed in this Python "
+                        f"({sys.executable}): {exc}. "
+                        'Install with: pip install -e ".[cursor]" '
+                        "(use the same interpreter as the Windows service)."
+                    ),
+                    "runtime": runtime,
+                    "python": sys.executable,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return 1
 
+    try:
         if runtime == "local":
             options = AgentOptions(
                 api_key=api_key,

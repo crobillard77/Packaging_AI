@@ -1,0 +1,314 @@
+:host {
+  display: block;
+  min-height: 100vh;
+  color: #14201a;
+  font-family: 'Segoe UI', 'IBM Plex Sans', system-ui, sans-serif;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #d7ebe0 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #c9d7e8 0%, transparent 50%),
+    linear-gradient(180deg, #f3f6f4 0%, #e7ece9 100%);
+}
+
+.shell {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 4rem;
+}
+
+.hero {
+  margin-bottom: 1.75rem;
+}
+
+.brand {
+  margin: 0 0 0.35rem;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #0b3d2e;
+}
+
+.hero h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #24352c;
+}
+
+.lede {
+  margin: 0;
+  max-width: 36rem;
+  line-height: 1.45;
+  color: #3d5248;
+}
+
+.status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid #b7c9bf;
+  background: rgba(255, 255, 255, 0.55);
+  font-size: 0.9rem;
+}
+
+.status-strip .status {
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.panel {
+  padding: 1.25rem 1.15rem 1.4rem;
+  border: 1px solid #b7c9bf;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.panel h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+}
+
+.panel h3 {
+  margin: 1rem 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.hint {
+  display: block;
+  margin: 0 0 1rem;
+  color: #52665c;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+label {
+  display: block;
+  margin-bottom: 1rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+label.checkbox {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 500;
+}
+
+input[type='text'],
+input[type='password'],
+textarea {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #8fa69a;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  box-sizing: border-box;
+}
+
+textarea {
+  resize: vertical;
+}
+
+.badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.badge.required {
+  color: #6b1d1d;
+  background: #f3d4d4;
+}
+
+.badge.optional {
+  color: #1d3b6b;
+  background: #d4e0f3;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1.25rem;
+}
+
+button {
+  border: 1px solid transparent;
+  padding: 0.55rem 0.95rem;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button.primary {
+  color: #f7fbf8;
+  background: #0b3d2e;
+  border-color: #0b3d2e;
+}
+
+button.danger {
+  color: #6b1d1d;
+  background: transparent;
+  border-color: #b86a6a;
+}
+
+.banner.error {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.85rem;
+  color: #6b1d1d;
+  background: #f8e4e4;
+  border: 1px solid #d9a0a0;
+}
+
+.meta {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0 0 1rem;
+}
+
+.meta div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.meta dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #52665c;
+}
+
+.meta dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+.package-path {
+  margin: 0 0 1rem;
+  font-weight: 600;
+}
+
+.package-path code,
+code {
+  display: block;
+  margin-top: 0.35rem;
+  padding: 0.55rem 0.65rem;
+  background: #eef3f0;
+  border: 1px solid #c5d4cb;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 0.85rem;
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.status-strip code {
+  display: inline;
+  margin: 0;
+  padding: 0.1rem 0.3rem;
+  background: #eef3f0;
+  border: none;
+}
+
+.questions {
+  margin: 0 0 1rem;
+  padding-left: 1.1rem;
+}
+
+details {
+  margin-bottom: 1rem;
+}
+
+details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.log-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.log-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: baseline;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid #d0ddd6;
+}
+
+button.linkish {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #0b3d2e;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.log-meta {
+  color: #52665c;
+  font-size: 0.85rem;
+}
+
+.log-viewer {
+  margin: 0 0 1rem;
+  border: 1px solid #b7c9bf;
+  background: #0f1a15;
+  color: #e7f2ec;
+}
+
+.log-viewer-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  padding: 0.55rem 0.7rem;
+  background: #1a2b23;
+  border-bottom: 1px solid #2d4338;
+}
+
+.log-viewer-header .hint {
+  margin: 0;
+  color: #a8c0b4;
+}
+
+.log-viewer-header button {
+  margin-left: auto;
+  color: #e7f2ec;
+  background: transparent;
+  border: 1px solid #5a7568;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.85rem;
+}
+
+.log-viewer pre {
+  margin: 0;
+  padding: 0.75rem;
+  max-height: 28rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}

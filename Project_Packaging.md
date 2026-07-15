@@ -12,10 +12,32 @@ This repository is a **Python / LangGraph backend**, delivered as a **CLI** (`pa
 2. For EXEs, attempts **WiX dark.exe** extraction; if an MSI is found, packages as MSI
 3. Reads MSI metadata (ProductName, Version, Manufacturer, ProductCode, UpgradeCode, **Platform → `$appArch`**)
 4. Builds a structured **`Install_Plan`** with **rule-based** planning (no LLM)
-5. Reviews the plan against `Templates/PSADT_Requirements.md` (Cursor SDK if `CURSOR_API_KEY` is set, else OpenAI if `OPENAI_API_KEY`, else heuristic)
-6. Records the **review model** on both `Install_Plan.json` and `Review_Report.json`, and prints it on the console
-7. Prompts for clarification when confidence &lt; **0.75**, or when EXE metadata / uninstall is missing
-8. Generates a full PSADT package under `output/{AppName}_{Version}/`
+5. Scans the installer for known vulnerabilities (SHA-256, Authenticode, NVD/OSV; optional `cve-bin-tool`)
+6. Reviews the plan against `Templates/PSADT_Requirements.md` (Cursor SDK if `CURSOR_API_KEY` is set, else OpenAI if `OPENAI_API_KEY`, else heuristic)
+7. Records the **review model** on both `Install_Plan.json` and `Review_Report.json`, and prints it on the console
+8. Prompts for clarification when confidence &lt; **0.75**, or when EXE metadata / uninstall is missing
+9. Generates a full PSADT package under `output/{AppName}_{Version}/` (includes `Vulnerability_Report.json`)
+
+### Workflow graphic
+
+End-to-end packaging flow (visual aid — not required to recreate the project):
+
+<img src="docs/Packaging_AI_Workflow.png" alt="Packaging AI workflow" width="720" />
+
+```mermaid
+flowchart TD
+  startNode["Installer folder path"] --> scanNode["Scan media"]
+  scanNode --> classifyNode["Classify + dark.exe"]
+  classifyNode --> planNode["Build Install_Plan<br/>(rule-based)"]
+  planNode --> vulnNode["Vulnerability scan<br/>hash · Authenticode · NVD/OSV"]
+  vulnNode --> reviewNode["Review vs<br/>PSADT_Requirements"]
+  reviewNode --> scoreGate{"Needs clarify?<br/>confidence / META / uninstall"}
+  scoreGate -->|no| generateNode["Generate PSADT package"]
+  scoreGate -->|yes| clarifyNode["Clarify<br/>META · uninstall · confirm"]
+  clarifyNode -->|continue| planNode
+  clarifyNode -->|abort| endFail["Stop"]
+  generateNode --> artifacts["output/{App}_{Ver}/<br/>Package/ + logs/"]
+```
 
 ---
 
@@ -65,11 +87,21 @@ Packaging_AI/
     __init__.py
     __main__.py                 # python -m packaging_ai
     cli.py                      # argparse entry: packaging-ai
-    config.py                   # loads packaging_ai.config.json (paths, threshold, models)
+    config.py                   # loads packaging_ai.config.json (paths, threshold, models, logging)
+    logutil.py                  # setup_logging / get_logger
     models.py                   # Pydantic: InstallPlan, ReviewReport, DetectedInstaller, …
     graph/
       state.py                  # PackagingState + clarification merge
-      nodes.py                  # scan → classify → plan → review → clarify → generate
+      nodes/                    # one module per LangGraph node
+        __init__.py             # re-exports node + routing functions
+        scan.py
+        classify.py
+        plan.py
+        vuln_scan.py            # hash + Authenticode + NVD/OSV (+ optional cve-bin-tool)
+        review.py
+        clarify.py
+        generate.py
+        routing.py              # route_after_review / route_after_clarify
       __init__.py               # LangGraph wiring + run_packaging()
     installers/
       scan.py                   # folder enumeration
@@ -84,6 +116,14 @@ Packaging_AI/
       review.py                 # heuristic / Cursor SDK / OpenAI review + hard gates
       cursor_review_worker.py   # subprocess Cursor agent (cloud default)
       cursor_windows_patch.py   # Windows bridge patch (avoids WinError 10038)
+    vuln/
+      scan.py                   # orchestrate vulnerability assessment
+      hashing.py                # SHA-256
+      signature.py              # Authenticode (PowerShell)
+      matching.py               # CPE / version range helpers
+      nvd.py                    # NIST NVD 2.0 API
+      osv.py                    # OSV API
+      cve_bin.py                # optional cve-bin-tool
     psadt/
       generate.py               # copy toolkit, fill script, copy media, write logs
       requirements.py           # load/validate Templates/PSADT_Requirements.md
@@ -97,11 +137,16 @@ Packaging_AI/
   Tools/
     WIX/
       dark.exe                  # WiX Toolset dark (EXE decompile / extract)
+  docs/
+    Packaging_AI_Workflow.png   # workflow graphic (visual aid)
+    Packaging_AI_Connections.png # UI / IIS / API connection diagram
+    Packaging_AI_LangGraph_Nodes.png # LangGraph node flowchart
   output/                       # generated packages (gitignored)
   .cache/dark/                  # dark extract working dirs (gitignored)
   requirements.txt
   pyproject.toml                # packaging-ai console script + optional llm extras
   Project_Packaging.md          # this document
+  Project_Packaging_VSCode.md   # recreate guide for VS Code + Opus
   README.md
 ```
 
@@ -201,6 +246,8 @@ output/{AppName}_{Version}/
   logs/
     Install_Plan.json         # includes model + reviewer after review
     Review_Report.json        # includes model + reviewer + raw_response
+    Vulnerability_Report.json # SHA-256, Authenticode, CVE findings
+    Packaging_AI.log          # full packaging run log for this package
     PSADT_Requirements.md
 ```
 
@@ -245,12 +292,17 @@ After a successful run, print at least:
 
 ## 6. High-level architecture (LangGraph)
 
+LangGraph node flowchart (visual aid):
+
+<img src="docs/Packaging_AI_LangGraph_Nodes.png" alt="Packaging AI LangGraph nodes" width="720" />
+
 ```mermaid
 flowchart TD
   startNode[Start_folder_path] --> scanNode[Scan_folder]
   scanNode --> classifyNode[Classify_plus_dark_extract]
   classifyNode --> planNode[Generate_Install_Plan]
-  planNode --> reviewNode[Review_vs_requirements]
+  planNode --> vulnNode[Vuln_scan_hash_sig_NVD_OSV]
+  vulnNode --> reviewNode[Review_vs_requirements]
   reviewNode --> scoreGate{needs_clarify}
   scoreGate -->|no| generateNode[Generate_PSADT]
   scoreGate -->|yes| clarifyNode[Ask_user]
@@ -264,9 +316,10 @@ flowchart TD
 1. **Scan** — enumerate installer media under the folder
 2. **Classify** — detect family; for each EXE run dark.exe; if MSI extracted, replace primary with that MSI (`source_exe`, `extracted_via_dark`)
 3. **Plan** — rule-based `Install_Plan` (commands, metadata, `$appArch`, footprint MST/reg names, deploy script name, EXE post steps); apply `META:` / `UNINSTALL_CMD:` clarifications
-4. **Review** — score against `PSADT_Requirements.md`; stamp `model`/`reviewer` onto plan; cap confidence below 0.75 for missing uninstall or incomplete EXE metadata
-5. **Clarify** (when needed) — order: EXE metadata → EXE/missing uninstall → soft confirmation (`input()` — CLI only)
-6. **Generate** — wipe prior output folder, copy toolkit + media, fill script, create footprint MST if needed, write logs (plan + review include model)
+4. **Vuln scan** — SHA-256 + Authenticode; NVD CPE/keyword + OSV CVE lookup filtered to the planned version; optional `cve-bin-tool`; write findings into state
+5. **Review** — score against `PSADT_Requirements.md`; merge vuln findings; stamp `model`/`reviewer` onto plan; cap confidence below 0.75 for missing uninstall or incomplete EXE metadata
+6. **Clarify** (when needed) — order: EXE metadata → EXE/missing uninstall → soft confirmation (`input()` — CLI only)
+7. **Generate** — wipe prior output folder, copy toolkit + media, fill script, create footprint MST if needed, write logs (plan + review + vulnerability report)
 
 ### Clarification protocol
 
@@ -356,7 +409,14 @@ Default log path token: `$configToolkitLogDir\$($appName)_$($appVersion)_Install
   "output_dir": "output",
   "confidence_threshold": 0.75,
   "model": "composer-2.5",
-  "openai_model": "gpt-4o-mini"
+  "openai_model": "gpt-4o-mini",
+  "openai_temperature": 0,
+  "vuln_scan": true,
+  "vuln_block_on_critical": false,
+  "vuln_min_severity": "MEDIUM",
+  "nvd_api_key": "",
+  "log_level": "INFO",
+  "log_file": "logs/packaging_ai.log"
 }
 ```
 
@@ -369,9 +429,19 @@ Default log path token: `$configToolkitLogDir\$($appName)_$($appVersion)_Install
 | `confidence_threshold` | Clarify when score &lt; this (default **0.75**) |
 | `model` | Cursor review model ID |
 | `openai_model` | OpenAI fallback review model |
+| `openai_temperature` | OpenAI review temperature (default `0`) |
+| `vuln_scan` | Enable installer vulnerability assessment (default true) |
+| `vuln_block_on_critical` | Abort packaging when CRITICAL CVEs match (default false) |
+| `vuln_min_severity` | Minimum severity to keep (`MEDIUM` default) |
+| `nvd_api_key` | Optional NIST NVD API key (or `$env:NVD_API_KEY`) for higher rate limits |
+| `log_level` | Console/file log level (`DEBUG` / `INFO` / `WARNING` / `ERROR`) |
+| `log_file` | Path for file logging (default `logs/packaging_ai.log`; empty/`null` disables) |
 
 Relative paths resolve from the project root. Override the config file with `$env:PACKAGING_AI_CONFIG`.
 `$env:PACKAGING_AI_MODEL` overrides `model` (Cursor). `$env:PACKAGING_AI_OPENAI_MODEL` overrides `openai_model`.
+`$env:PACKAGING_AI_OPENAI_TEMPERATURE` overrides `openai_temperature`.
+`$env:PACKAGING_AI_VULN_SCAN=false` disables vuln scanning. Optional: `pip install cve-bin-tool` for deeper binary component CVE detection.
+`$env:PACKAGING_AI_LOG_LEVEL` / `$env:PACKAGING_AI_LOG_FILE` override logging. CLI: `-v` / `--log-level` / `--log-file`.
 
 ### Footprint MST (MSI without MST)
 
@@ -412,6 +482,7 @@ Relative paths resolve from the project root. Override the config file with `$en
 - **FR-6d EXE footprint registry** — For EXE packages, Post-Installation must `Set-RegistryKey` and Post-Uninstallation must `Remove-RegistryKey` for `HKLM\SOFTWARE\Package_Footprint` (name `$($appVendor)$($appName)`, value `1.00`).
 - **FR-7 Install_Plan** — Always produce structured `Install_Plan` before generation; include planned `deploy_script_name`, `footprint_*` fields.
 - **FR-7b Review model on artifacts** — After review, stamp `model` and `reviewer` on `Install_Plan` and `Review_Report`; CLI must display the review model.
+- **FR-7c Vulnerability scan** — After plan, assess primary installer (and source EXE): SHA-256, Authenticode, NVD/OSV CVE match for product/version; optional cve-bin-tool; write `Vulnerability_Report.json`; merge into review findings.
 - **FR-8 Templates store** — Canonical assets under `Templates/`; generation always uses them.
 - **FR-9 Package layout** — `Package/` (script + toolkit + media at root) and `logs/`; clean rebuild of `{App}_{Ver}/`.
 - **FR-10 Template fill** — Populate vendor, name, version, arch/lang, install/uninstall, pre/post steps; set `$appScriptAuthor` / `$appScriptDate`.
@@ -431,12 +502,13 @@ Relative paths resolve from the project root. Override the config file with `$en
 |---------|--------|
 | Paths / threshold / models | `packaging_ai/config.py` + `packaging_ai.config.json` |
 | Data models | `packaging_ai/models.py` |
-| Graph orchestration | `packaging_ai/graph/` |
+| Graph orchestration | `packaging_ai/graph/` (`nodes/` = one file per node) |
 | Scan / classify / silent / dark | `packaging_ai/installers/` |
 | MSI read / footprint MST | `packaging_ai/msi/reader.py`, `msi/transform.py` |
 | Rule-based plan | `packaging_ai/planning/plan.py` |
 | Review + hard gates | `packaging_ai/planning/review.py` |
 | Cursor worker / Windows patch | `planning/cursor_review_worker.py`, `cursor_windows_patch.py` |
+| Vulnerability scan | `packaging_ai/vuln/` |
 | Requirements checks + uninstall normalize | `packaging_ai/psadt/requirements.py` |
 | Package generation | `packaging_ai/psadt/generate.py` |
 | CLI | `packaging_ai/cli.py` → `packaging-ai` |
@@ -450,7 +522,7 @@ Confidence threshold and tool paths come from `packaging_ai.config.json` (loaded
 | Phase | Scope |
 |-------|--------|
 | **Phase 2** | Dedicated MSI library for rich query / edit / create (`MSI_Library.md`) |
-| **Phase 3** | Web UI / HTTP API consuming this backend (async jobs; replace `input()` clarify with structured clarification endpoints) |
+| **Phase 3** | Web UI / HTTP API consuming this backend (async jobs; replace `input()` clarify with structured clarification endpoints) — plan: [`API/Project_API.md`](API/Project_API.md) (FastAPI + IIS ARR, SQL Server jobs, `X-API-Key`) |
 | **Phase 4** | Optional LLM-assisted planning (gap-filler on top of rules; separate `plan_model` if needed) |
 | **Phase 5** | VM auto-test of generated packages |
 
@@ -465,4 +537,4 @@ Confidence threshold and tool paths come from `packaging_ai.config.json` (loaded
 - **Confidence threshold:** **0.75**.
 - **EXE metadata:** filename stem / default `1.0.0` are hints only — not “found” Publisher/AppName/Version.
 - **Planning:** deterministic / rule-based; LLM is used for **review only** in v1.0.
-- **Delivery:** CLI first; HTTP API, UI, and VM testing are later phases.
+- **Delivery:** CLI first; HTTP API is Phase 3 ([`API/Project_API.md`](API/Project_API.md), implemented under `packaging_ai/api/`).

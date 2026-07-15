@@ -84,6 +84,49 @@ class ReviewReport(BaseModel):
     raw_response: str | None = None
 
 
+class VulnerabilityFinding(BaseModel):
+    cve_id: str
+    severity: str = "UNKNOWN"  # CRITICAL|HIGH|MEDIUM|LOW|UNKNOWN
+    cvss_score: float | None = None
+    summary: str = ""
+    source: str = ""  # nvd | osv | cve-bin-tool
+    matched_cpe: str | None = None
+    published: str | None = None
+    references: list[str] = Field(default_factory=list)
+
+
+class SignatureInfo(BaseModel):
+    path: str
+    status: str = "Unknown"  # Valid | NotSigned | HashMismatch | …
+    signer: str | None = None
+    timestamp: str | None = None
+    is_valid: bool = False
+
+
+class FileHashInfo(BaseModel):
+    path: str
+    sha256: str
+    size_bytes: int = 0
+
+
+class VulnerabilityReport(BaseModel):
+    app_vendor: str = ""
+    app_name: str = ""
+    app_version: str = ""
+    scanned_paths: list[str] = Field(default_factory=list)
+    file_hashes: list[FileHashInfo] = Field(default_factory=list)
+    signatures: list[SignatureInfo] = Field(default_factory=list)
+    cpes_tried: list[str] = Field(default_factory=list)
+    findings: list[VulnerabilityFinding] = Field(default_factory=list)
+    critical_count: int = 0
+    high_count: int = 0
+    medium_count: int = 0
+    low_count: int = 0
+    sources_used: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
 class PackageArtifacts(BaseModel):
     package_dir: str = ""
     deploy_script: str = ""
@@ -93,5 +136,7 @@ class PackageArtifacts(BaseModel):
     install_plan_path: str = ""
     review_path: str = ""
     requirements_path: str = ""
+    vulnerability_path: str = ""
+    packaging_log_path: str = ""
     footprint_reg_path: str = ""
     footprint_mst_path: str = ""

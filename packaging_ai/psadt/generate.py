@@ -10,19 +10,29 @@ from packaging_ai.config import (
     PSADT_SCRIPT_TEMPLATE,
     PSADT_TOOLKIT_DIR,
 )
-from packaging_ai.models import InstallPlan, InstallerFamily, PackageArtifacts, ReviewReport
+from packaging_ai.models import (
+    InstallPlan,
+    InstallerFamily,
+    PackageArtifacts,
+    ReviewReport,
+    VulnerabilityReport,
+)
 from packaging_ai.msi.transform import create_footprint_mst
+from packaging_ai.logutil import get_logger, write_package_log
 from packaging_ai.psadt.requirements import (
     load_psadt_requirements,
     normalize_uninstall_command,
     validate_generated_script,
 )
 
+log = get_logger("psadt.generate")
+
 
 def generate_psadt_package(
     plan: InstallPlan,
     review: ReviewReport,
     output_root: str | Path,
+    vulnerability_report: VulnerabilityReport | None = None,
 ) -> PackageArtifacts:
     """Create output/{App}_{Ver}/Package and output/{App}_{Ver}/logs."""
     requirements_text = load_psadt_requirements()
@@ -34,12 +44,17 @@ def generate_psadt_package(
     safe_name = _safe_name(plan.app_name or "Application")
     safe_ver = _safe_name(plan.app_version or "1.0.0")
     root_dir = Path(output_root) / f"{safe_name}_{safe_ver}"
+    log.info("Writing package under %s", root_dir)
     if root_dir.exists():
+        log.info("Removing existing output folder for clean rebuild: %s", root_dir)
         shutil.rmtree(root_dir)
     package_dir = root_dir / "Package"
     logs_dir = root_dir / "logs"
     package_dir.mkdir(parents=True, exist_ok=True)
     logs_dir.mkdir(parents=True, exist_ok=True)
+
+    # Persist this run's log under the package logs folder (full session so far + generate)
+    packaging_log_path = str(write_package_log(logs_dir, "Packaging_AI.log"))
 
     toolkit_dest = package_dir / "AppDeployToolkit"
     if toolkit_dest.exists():
@@ -82,6 +97,12 @@ def generate_psadt_package(
     review_path = logs_dir / "Review_Report.json"
     review_path.write_text(review.model_dump_json(indent=2), encoding="utf-8")
 
+    vulnerability_path = ""
+    if vulnerability_report is not None:
+        vuln_path = logs_dir / "Vulnerability_Report.json"
+        vuln_path.write_text(vulnerability_report.model_dump_json(indent=2), encoding="utf-8")
+        vulnerability_path = str(vuln_path)
+
     if not toolkit_dest.is_dir():
         raise RuntimeError("Generated package is missing AppDeployToolkit (invalid).")
     if not requirements_dest.is_file():
@@ -98,6 +119,8 @@ def generate_psadt_package(
         install_plan_path=str(plan_path),
         review_path=str(review_path),
         requirements_path=str(requirements_dest),
+        vulnerability_path=vulnerability_path,
+        packaging_log_path=packaging_log_path,
         footprint_reg_path="",
         footprint_mst_path=footprint_mst_path,
     )

@@ -1,0 +1,265 @@
+<main class="shell">
+  <header class="hero">
+    <p class="brand">Packaging AI</p>
+    <h1>Create a package</h1>
+    <p class="lede">
+      Point at installer sources on the API host, answer any required clarifications, then get the
+      package path.
+    </p>
+  </header>
+
+  @if (job(); as j) {
+    <div class="status-strip" aria-live="polite">
+      <span>Job <code>{{ j.id }}</code></span>
+      <span class="status">{{ j.status }}</span>
+    </div>
+  }
+
+  @if (errorMessage() && step() !== 'error') {
+    <p class="banner error" role="alert">{{ errorMessage() }}</p>
+  }
+
+  @switch (step()) {
+    @case ('sources') {
+      <section class="panel" aria-labelledby="sources-title">
+        <h2 id="sources-title">Sources</h2>
+        <p class="hint">
+          Paths must be absolute directories on the API server (not a browser file picker).
+          The API key is injected by IIS (or the local Angular proxy), not entered here.
+        </p>
+
+        <label>
+          Input folder
+          <span class="badge required">Required</span>
+          <input
+            type="text"
+            name="folderPath"
+            [(ngModel)]="folderPath"
+            placeholder="D:\path\to\installers"
+            spellcheck="false"
+          />
+        </label>
+
+        <label>
+          Output directory
+          <span class="badge optional">Optional</span>
+          <input
+            type="text"
+            name="outputDir"
+            [(ngModel)]="outputDir"
+            placeholder="D:\DataShare\Output"
+            spellcheck="false"
+          />
+        </label>
+
+        <label class="checkbox">
+          <input type="checkbox" name="autoConfirm" [(ngModel)]="autoConfirm" />
+          Auto-confirm soft low-confidence findings
+          <span class="badge optional">Optional</span>
+        </label>
+
+        <div class="actions">
+          <button type="button" class="primary" [disabled]="busy()" (click)="createJob()">
+            {{ busy() ? 'Creating…' : 'Create package' }}
+          </button>
+        </div>
+      </section>
+    }
+
+    @case ('progress') {
+      <section class="panel" aria-labelledby="progress-title">
+        <h2 id="progress-title">Running</h2>
+        <p class="hint">Polling job status every {{ pollSeconds }} seconds…</p>
+
+        @if (job(); as j) {
+          @if (j.plan_summary; as plan) {
+            <dl class="meta">
+              <div>
+                <dt>Vendor</dt>
+                <dd>{{ plan.app_vendor || '—' }}</dd>
+              </div>
+              <div>
+                <dt>App</dt>
+                <dd>{{ plan.app_name || '—' }}</dd>
+              </div>
+              <div>
+                <dt>Version</dt>
+                <dd>{{ plan.app_version || '—' }}</dd>
+              </div>
+              <div>
+                <dt>Family</dt>
+                <dd>{{ plan.primary_family || '—' }}</dd>
+              </div>
+            </dl>
+          }
+
+          @if (j.confidence_score !== null) {
+            <p>Confidence: {{ j.confidence_score | number: '1.0-2' }}</p>
+          }
+
+          @if (j.review_findings.length) {
+            <h3>Review findings</h3>
+            <ul>
+              @for (finding of j.review_findings; track finding) {
+                <li>{{ finding }}</li>
+              }
+            </ul>
+          }
+
+          <div class="actions">
+            @if (canCancel(j.status)) {
+              <button type="button" class="danger" [disabled]="busy()" (click)="cancelJob()">
+                Cancel job
+              </button>
+            }
+          </div>
+        }
+      </section>
+    }
+
+    @case ('clarify') {
+      <section class="panel" aria-labelledby="clarify-title">
+        <h2 id="clarify-title">Clarifications</h2>
+        <p class="hint">Provide the information below, then submit to continue packaging.</p>
+
+        @if (clarification(); as c) {
+          @if (c.open_questions.length) {
+            <ul class="questions">
+              @for (q of c.open_questions; track q) {
+                <li>{{ q }}</li>
+              }
+            </ul>
+          }
+
+          @if (c.needs_meta) {
+            <label>
+              Metadata (Publisher|AppName|Version)
+              <span class="badge required">Required</span>
+              <input
+                type="text"
+                name="meta"
+                [(ngModel)]="meta"
+                placeholder="Publisher|AppName|1.2.3"
+                spellcheck="false"
+              />
+            </label>
+          }
+
+          @if (c.needs_uninstall) {
+            <label>
+              Uninstall command
+              <span class="badge required">Required</span>
+              @if (c.suggested_uninstall) {
+                <span class="hint">Suggested: {{ c.suggested_uninstall }}</span>
+              }
+              <textarea
+                name="uninstallPaste"
+                rows="3"
+                [(ngModel)]="uninstallPaste"
+                placeholder='"C:\Program Files\App\uninstall.exe" /S'
+                spellcheck="false"
+              ></textarea>
+            </label>
+          }
+
+          @if (c.needs_soft_confirm) {
+            <label class="checkbox">
+              <input type="checkbox" name="softConfirm" [(ngModel)]="softConfirm" />
+              Confirm and continue
+              <span class="badge optional">Optional</span>
+            </label>
+          }
+        }
+
+        <div class="actions">
+          <button type="button" class="primary" [disabled]="busy()" (click)="submitClarify()">
+            {{ busy() ? 'Submitting…' : 'Submit clarifications' }}
+          </button>
+          <button type="button" class="danger" [disabled]="busy()" (click)="abortClarify()">
+            Abort
+          </button>
+        </div>
+      </section>
+    }
+
+    @case ('complete') {
+      <section class="panel" aria-labelledby="complete-title">
+        <h2 id="complete-title">Package ready</h2>
+
+        @if (artifacts(); as a) {
+          <p class="package-path">
+            Package location
+            <code>{{ a.package_dir || 'Not available yet' }}</code>
+          </p>
+
+          @if (artifactEntries().length) {
+            <details>
+              <summary>Other artifact paths</summary>
+              <dl class="meta">
+                @for (entry of artifactEntries(); track entry.label) {
+                  <div>
+                    <dt>{{ entry.label }}</dt>
+                    <dd><code>{{ entry.path }}</code></dd>
+                  </div>
+                }
+              </dl>
+            </details>
+          }
+
+          <h3>Logs</h3>
+          @if (logsError()) {
+            <p class="banner error" role="alert">{{ logsError() }}</p>
+          }
+          @if (logsBusy() && !selectedLog()) {
+            <p class="hint">Loading logs…</p>
+          } @else if (logFiles().length) {
+            <ul class="log-list">
+              @for (file of logFiles(); track file.name) {
+                <li>
+                  <button type="button" class="linkish" (click)="viewLog(file.name)">
+                    {{ file.name }}
+                  </button>
+                  <span class="log-meta">{{ formatSize(file.size_bytes) }}</span>
+                </li>
+              }
+            </ul>
+          } @else if (!logsBusy()) {
+            <p class="hint">No log files found for this job.</p>
+          }
+
+          @if (selectedLog(); as log) {
+            <div class="log-viewer">
+              <div class="log-viewer-header">
+                <strong>{{ log.name }}</strong>
+                @if (log.truncated) {
+                  <span class="hint">Showing first {{ formatSize(log.content.length) }} (file is larger)</span>
+                }
+                <button type="button" (click)="closeLog()">Close</button>
+              </div>
+              <pre>{{ log.content }}</pre>
+            </div>
+          }
+        } @else if (busy()) {
+          <p class="hint">Loading artifact paths…</p>
+        }
+
+        <div class="actions">
+          <button type="button" class="primary" (click)="resetWizard()">Start another package</button>
+        </div>
+      </section>
+    }
+
+    @case ('error') {
+      <section class="panel" aria-labelledby="error-title">
+        <h2 id="error-title">Job ended</h2>
+        @if (job(); as j) {
+          <p>Status: <strong>{{ j.status }}</strong></p>
+        }
+        <p class="banner error" role="alert">{{ errorMessage() }}</p>
+        <div class="actions">
+          <button type="button" class="primary" (click)="resetWizard()">Start another package</button>
+        </div>
+      </section>
+    }
+  }
+</main>

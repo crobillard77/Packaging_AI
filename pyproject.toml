@@ -19,9 +19,11 @@ dependencies = [
 llm = ["cursor-sdk>=0.1.0", "langchain-openai>=0.3.0"]
 cursor = ["cursor-sdk>=0.1.0"]
 openai = ["langchain-openai>=0.3.0"]
+api = ["fastapi>=0.115.0", "uvicorn[standard]>=0.32.0", "pyodbc>=5.1.0"]
 
 [project.scripts]
 packaging-ai = "packaging_ai.cli:main"
+packaging-ai-api = "packaging_ai.api.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

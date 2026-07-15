@@ -5,8 +5,9 @@ import sys
 from pathlib import Path
 
 from packaging_ai import __version__
-from packaging_ai.config import DEFAULT_OUTPUT_DIR
+from packaging_ai.config import DEFAULT_OUTPUT_DIR, LOG_FILE, LOG_LEVEL
 from packaging_ai.graph import run_packaging
+from packaging_ai.logutil import end_package_log, get_logger, setup_logging
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -33,6 +34,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Auto-confirm when confidence is below 0.75 (does not skip a missing uninstall)",
     )
     parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable DEBUG logging on the console",
+    )
+    parser.add_argument(
+        "--log-level",
+        default=None,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Log level (default: config log_level / INFO)",
+    )
+    parser.add_argument(
+        "--log-file",
+        default=None,
+        help="Log file path (default: config log_file; empty string disables file logging)",
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
@@ -44,16 +62,33 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    level = "DEBUG" if args.verbose else (args.log_level or LOG_LEVEL)
+    if args.log_file is not None:
+        log_file: str | Path | None = args.log_file.strip() or None
+    else:
+        log_file = LOG_FILE
+    setup_logging(level, log_file=log_file, console=True)
+    log = get_logger("cli")
+
+    try:
+        return _main_impl(args, log, log_file)
+    finally:
+        end_package_log()
+
+
+def _main_impl(args: argparse.Namespace, log, log_file) -> int:
     folder = Path(args.folder)
     if not folder.is_absolute():
-        print(f"Error: folder path must be absolute. Got: {args.folder}", file=sys.stderr)
+        log.error("Folder path must be absolute. Got: %s", args.folder)
         return 2
     if not folder.is_dir():
-        print(f"Error: folder not found: {folder}", file=sys.stderr)
+        log.error("Folder not found: %s", folder)
         return 2
 
-    print(f"Packaging AI v{__version__}")
-    print(f"Scanning: {folder}")
+    log.info("Packaging AI v%s", __version__)
+    log.info("Scanning: %s", folder)
+    if log_file:
+        log.info("Log file: %s", log_file)
 
     try:
         result = run_packaging(
@@ -62,11 +97,11 @@ def main(argv: list[str] | None = None) -> int:
             auto_confirm=bool(args.yes),
         )
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        log.exception("Packaging failed: %s", exc)
         return 1
 
     if result.get("error"):
-        print(f"Stopped: {result['error']}", file=sys.stderr)
+        log.error("Stopped: %s", result["error"])
         return 1
 
     plan = result.get("install_plan")
@@ -74,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     findings = result.get("review_findings") or []
     artifacts = result.get("generated_artifacts")
     review = result.get("review_report")
+    vuln = result.get("vulnerability_report")
 
     model = (plan.model if plan is not None else None) or (
         review.model if review is not None else None
@@ -82,43 +118,67 @@ def main(argv: list[str] | None = None) -> int:
         review.reviewer if review is not None else None
     )
 
-    print(f"\nConfidence: {score:.2f}")
+    log.info("Confidence: %.2f", score)
     if model:
         label = f"{model}" + (f" ({reviewer})" if reviewer and reviewer != model else "")
-        print(f"Review model: {label}")
+        log.info("Review model: %s", label)
     for f in findings:
-        print(f"  - {f}")
+        log.info("Finding: %s", f)
+
+    if vuln is not None:
+        log.info(
+            "Vulnerability scan: %s finding(s) (CRITICAL=%s, HIGH=%s, MEDIUM=%s, LOW=%s)",
+            len(vuln.findings),
+            vuln.critical_count,
+            vuln.high_count,
+            vuln.medium_count,
+            vuln.low_count,
+        )
+        for h in vuln.file_hashes[:2]:
+            log.info("SHA256 %s = %s", Path(h.path).name, h.sha256)
+        for s in vuln.signatures[:2]:
+            log.info("Signature %s = %s", Path(s.path).name, s.status)
+        for finding in vuln.findings[:5]:
+            score_s = f" CVSS {finding.cvss_score}" if finding.cvss_score is not None else ""
+            log.info("CVE %s [%s]%s", finding.cve_id, finding.severity, score_s)
 
     if plan is not None:
-        print("\nInstall_Plan summary:")
-        print(f"  App: {plan.app_vendor} {plan.app_name} {plan.app_version}")
-        print(f"  Primary: {plan.primary_installer}")
-        print(f"  Family: {plan.primary_family}")
+        log.info(
+            "Install_Plan: %s %s %s | family=%s",
+            plan.app_vendor,
+            plan.app_name,
+            plan.app_version,
+            plan.primary_family,
+        )
+        log.info("Primary installer: %s", plan.primary_installer)
         if plan.extracted_via_dark and plan.source_exe:
-            print(f"  Extracted via dark.exe from: {plan.source_exe}")
-        print(f"  Install: {plan.install_command}")
+            log.info("Extracted via dark.exe from: %s", plan.source_exe)
+        log.info("Install command: %s", plan.install_command)
         if plan.model:
             model_line = plan.model
             if plan.reviewer and plan.reviewer != plan.model:
                 model_line = f"{plan.model} ({plan.reviewer})"
-            print(f"  Model: {model_line}")
+            log.info("Plan model: %s", model_line)
 
     if artifacts is None:
-        print("No package was generated.", file=sys.stderr)
+        log.error("No package was generated.")
         return 1
 
-    print("\nPackage ready:")
-    print(f"  Package: {artifacts.package_dir}")
-    print(f"  Script: {artifacts.deploy_script}")
-    print(f"  AppDeployToolkit: {artifacts.toolkit_dir}")
+    log.info("Package ready: %s", artifacts.package_dir)
+    log.info("Script: %s", artifacts.deploy_script)
+    log.info("AppDeployToolkit: %s", artifacts.toolkit_dir)
     if artifacts.logs_dir:
-        print(f"  Logs: {artifacts.logs_dir}")
-    print(f"  Install_Plan: {artifacts.install_plan_path}")
-    print(f"  Review: {artifacts.review_path}")
+        log.info("Package logs: %s", artifacts.logs_dir)
+    log.info("Install_Plan: %s", artifacts.install_plan_path)
+    log.info("Review: %s", artifacts.review_path)
     if artifacts.requirements_path:
-        print(f"  Requirements: {artifacts.requirements_path}")
+        log.info("Requirements: %s", artifacts.requirements_path)
+    if getattr(artifacts, "vulnerability_path", None):
+        log.info("Vulnerabilities: %s", artifacts.vulnerability_path)
+    if getattr(artifacts, "packaging_log_path", None):
+        log.info("Packaging log: %s", artifacts.packaging_log_path)
     if artifacts.footprint_mst_path:
-        print(f"  Footprint MST: {artifacts.footprint_mst_path}")
+        log.info("Footprint MST: %s", artifacts.footprint_mst_path)
     return 0
 
 
