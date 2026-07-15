@@ -1,3 +1,4 @@
+logs/
 .venv/
 output/
 .cache/
@@ -14,4 +15,12 @@ build/
 .env
 *.msi
 *.exe
+# Keep other Templates files trackable despite *.exe / *.msi above
 !Templates/**
+!Templates/**/**
+# PSADT toolkit vendor tree — do not commit (must come after !Templates)
+Templates/AppDeployToolkit/
+Templates/AppDeployToolkit/**
+UI/packaging-ai-ui/node_modules/
+UI/packaging-ai-ui/dist/
+UI/packaging-ai-ui/.angular/
