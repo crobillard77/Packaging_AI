@@ -40,13 +40,84 @@ export class App implements OnDestroy {
   folderPath = '';
   outputDir = environment.defaultOutputDir;
   autoConfirm = false;
+  customRequirements = '';
 
   meta = '';
   uninstallPaste = '';
   softConfirm = false;
+  /** One answer slot per open_question when clarifying custom requirements. */
+  customAnswerFields: string[] = [];
+
+  readonly wizardSteps = [
+    { id: 'sources' as const, label: 'Sources' },
+    { id: 'progress' as const, label: 'Running' },
+    { id: 'clarify' as const, label: 'Clarify' },
+    { id: 'complete' as const, label: 'Ready' },
+  ];
 
   ngOnDestroy(): void {
     this.stopPolling();
+  }
+
+  stepHeading(): string {
+    switch (this.step()) {
+      case 'sources':
+        return 'Create a package';
+      case 'progress':
+        return 'Packaging in progress';
+      case 'clarify':
+        return this.isSoftConfirmOnly() ? 'Confirm to continue' : 'Clarification needed';
+      case 'complete':
+        return 'Package ready';
+      case 'error':
+        return 'Job ended';
+    }
+  }
+
+  stepLede(): string {
+    switch (this.step()) {
+      case 'sources':
+        return 'Point at installer sources on the API host. Paths are server-side; the API key is injected by IIS or the local proxy.';
+      case 'progress':
+        return 'Scan, plan, review, and generate are running. You can cancel while the job is queued or running.';
+      case 'clarify':
+        if (this.isSoftConfirmOnly()) {
+          return 'Review confidence is below the threshold. Confirm to generate the package, or abort.';
+        }
+        return 'The job paused for missing metadata, uninstall details, or custom-requirement answers.';
+      case 'complete':
+        return 'Copy the package path below, or open a log if you need to inspect what ran.';
+      case 'error':
+        return 'The job did not finish successfully. Start another package when you are ready.';
+    }
+  }
+
+  isSoftConfirmOnly(): boolean {
+    const c = this.clarification();
+    if (!c?.needs_soft_confirm) {
+      return false;
+    }
+    return (
+      !c.needs_meta &&
+      !c.needs_uninstall &&
+      !c.needs_custom_clarify &&
+      this.visibleOpenQuestions(c).length === 0
+    );
+  }
+
+  isStepDone(id: (typeof this.wizardSteps)[number]['id']): boolean {
+    const current = this.step();
+    if (current === 'error' || current === 'sources') {
+      return false;
+    }
+    if (current === 'progress') {
+      return id === 'sources';
+    }
+    if (current === 'clarify') {
+      return id === 'sources' || id === 'progress';
+    }
+    // complete
+    return id !== 'complete';
   }
 
   createJob(): void {
@@ -62,6 +133,7 @@ export class App implements OnDestroy {
       folder_path: folder,
       output_dir: this.outputDir.trim() || null,
       auto_confirm: this.autoConfirm,
+      custom_requirements: this.customRequirements.trim() || null,
     };
 
     this.api.createJob(body).subscribe({
@@ -113,6 +185,19 @@ export class App implements OnDestroy {
       this.errorMessage.set('Please confirm to continue, or abort the job.');
       return;
     }
+    if (needed.needs_custom_clarify) {
+      const questions = this.visibleOpenQuestions(needed);
+      if (questions.length !== this.customAnswerFields.length) {
+        this.customAnswerFields = questions.map((_, i) => this.customAnswerFields[i] ?? '');
+      }
+      const missing = this.customAnswerFields.findIndex((a) => !a.trim());
+      if (missing >= 0) {
+        this.errorMessage.set(
+          `Please answer question ${missing + 1} before submitting.`,
+        );
+        return;
+      }
+    }
 
     this.busy.set(true);
     this.api
@@ -121,6 +206,9 @@ export class App implements OnDestroy {
         meta: needed.needs_meta ? this.meta.trim() : null,
         uninstall_paste: needed.needs_uninstall ? this.uninstallPaste.trim() : null,
         confirm: needed.needs_soft_confirm ? this.softConfirm : false,
+        custom_answers: needed.needs_custom_clarify
+          ? this.formatCustomAnswers(this.visibleOpenQuestions(needed))
+          : null,
         abort: false,
       })
       .subscribe({
@@ -196,9 +284,11 @@ export class App implements OnDestroy {
     this.folderPath = '';
     this.outputDir = environment.defaultOutputDir;
     this.autoConfirm = false;
+    this.customRequirements = '';
     this.meta = '';
     this.uninstallPaste = '';
     this.softConfirm = false;
+    this.customAnswerFields = [];
   }
 
   canCancel(status: JobStatus | undefined): boolean {
@@ -207,6 +297,25 @@ export class App implements OnDestroy {
 
   clarification(): ClarificationNeeded | null {
     return this.job()?.clarification_needed ?? null;
+  }
+
+  /** Hide open questions that duplicate the META Publisher|AppName|Version field. */
+  visibleOpenQuestions(c: ClarificationNeeded): string[] {
+    const questions = c.open_questions ?? [];
+    if (!c.needs_meta) {
+      return questions;
+    }
+    return questions.filter((q) => !this.isMetaDuplicateQuestion(q));
+  }
+
+  private isMetaDuplicateQuestion(question: string): boolean {
+    const q = question.toLowerCase();
+    return (
+      q.includes('publisher|appname|version') ||
+      q.includes('application name is missing') ||
+      q.includes('application version is missing') ||
+      (q.includes('publisher') && q.includes('appname') && q.includes('version'))
+    );
   }
 
   artifactEntries(): { label: string; path: string }[] {
@@ -267,7 +376,20 @@ export class App implements OnDestroy {
     this.meta = '';
     this.uninstallPaste = needed?.suggested_uninstall ?? '';
     this.softConfirm = false;
+    const questions = needed
+      ? this.visibleOpenQuestions(needed)
+      : [];
+    this.customAnswerFields = questions.map(() => '');
     this.step.set('clarify');
+  }
+
+  private formatCustomAnswers(questions: string[]): string {
+    return questions
+      .map((q, i) => {
+        const answer = (this.customAnswerFields[i] ?? '').trim();
+        return `Q: ${q}\nA: ${answer}`;
+      })
+      .join('\n\n');
   }
 
   formatSize(bytes: number): string {

@@ -21,16 +21,19 @@ If `{AppName}_{Version}/` already exists under the output directory, delete it e
 - MUST include the deployment script and a full `AppDeployToolkit/` copy.
 - Do **NOT** create `Files/` or `SupportFiles/` folders.
 - Installer media (MSI/EXE/MST and related files) MUST be placed at the **Package root**, next to the deployment script.
-- **MSI without MST:** create a footprint **MST** that embeds the registry value from `Templates/FootPrint/FootPrintTemplate.reg` (`HKLM\SOFTWARE\Package_Footprint`, name `%Vendor%%AppName%`, value `1.00`). Apply the MST with `Execute-MSI ... -Transform`. Do **not** leave a `.reg` file in `Package/` — the registry change must come from the MST only.
+- **MSI without MST:** create a footprint **MST** that embeds the registry value from `Templates/FootPrint/FootPrintTemplate.reg` (`HKLM\SOFTWARE\Package_Footprint`, name `%Vendor%%AppName%`, value `%Version%` = package `$appVersion`). Apply the MST with `Execute-MSI ... -Transform`. Do **not** leave a `.reg` file in `Package/` — the registry change must come from the MST only.
   - **32-bit MSI** (`$appArch` = `x86` / Platform `Intel`): footprint component must be **32-bit** (no 64-bit component attribute) so Windows Installer writes to the **32-bit registry view** (`HKLM\SOFTWARE\Wow6432Node\...` on 64-bit Windows). Do **not** put `Wow6432Node` in the MSI Registry key path (avoids double redirection).
   - **64-bit MSI** (`x64` / `ARM64`): footprint component must include the **64-bit** attribute so the value is written to native `HKLM\SOFTWARE\Package_Footprint`.
-- **EXE footprint (no MST):** in **Post-Installation**, call PSADT `Set-RegistryKey` for the same footprint as the template:
+- **EXE footprint (no MST):** in **Post-Installation**, the **last** line must be PSADT `Set-RegistryKey` for the footprint:
   - Key: `HKEY_LOCAL_MACHINE\SOFTWARE\Package_Footprint`
   - Name: `$($appVendor)$($appName)` (Vendor + AppName, no separator — same as `%Vendor%%AppName%`)
   - Value: `1.00` (String)
   - If `$appArch` is `x86`, add `-Wow6432Node` on both set and remove.
-  - Example: `Set-RegistryKey -Key 'HKEY_LOCAL_MACHINE\SOFTWARE\Package_Footprint' -Name "$($appVendor)$($appName)" -Value '1.00' -Type 'String'`
-  - In **Post-Uninstallation**, remove it with `Remove-RegistryKey -Key 'HKEY_LOCAL_MACHINE\SOFTWARE\Package_Footprint' -Name "$($appVendor)$($appName)"`.
+  - Required last Post-Installation line:
+    `Set-RegistryKey -Key 'HKEY_LOCAL_MACHINE\SOFTWARE\Package_Footprint' -Name "$($appVendor)$($appName)" -Value '1.00' -Type 'String'`
+  - In **Post-Uninstallation**, the **last** line must remove it:
+    `Remove-RegistryKey -Key 'HKEY_LOCAL_MACHINE\SOFTWARE\Package_Footprint' -Name "$($appVendor)$($appName)"`
+  - Any other post-install / post-uninstall steps (custom requirements, etc.) MUST come **before** these footprint lines.
   - Do **not** leave a `.reg` file in `Package/`.
 
 ### `logs/` (artifacts)

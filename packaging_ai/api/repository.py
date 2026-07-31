@@ -35,6 +35,7 @@ class JobRepository(ABC):
         folder_path: str,
         output_dir: str | None,
         auto_confirm: bool,
+        state_json: dict[str, Any] | None = None,
     ) -> JobRecord:
         ...
 
@@ -95,6 +96,7 @@ class MemoryJobRepository(JobRepository):
         folder_path: str,
         output_dir: str | None,
         auto_confirm: bool,
+        state_json: dict[str, Any] | None = None,
     ) -> JobRecord:
         now = _utcnow()
         job = JobRecord(
@@ -103,7 +105,7 @@ class MemoryJobRepository(JobRepository):
             folder_path=folder_path,
             output_dir=output_dir,
             auto_confirm=auto_confirm,
-            state_json={},
+            state_json=dict(state_json or {}),
             created_at=now,
             updated_at=now,
         )
@@ -270,9 +272,11 @@ END
         folder_path: str,
         output_dir: str | None,
         auto_confirm: bool,
+        state_json: dict[str, Any] | None = None,
     ) -> JobRecord:
         job_id = uuid.uuid4()
         now = _utcnow()
+        initial_state = dict(state_json or {})
         with self._lock:
             with self._connect() as conn:
                 cur = conn.cursor()
@@ -289,7 +293,7 @@ END
                         folder_path,
                         output_dir,
                         1 if auto_confirm else 0,
-                        "{}",
+                        json.dumps(initial_state),
                         now,
                         now,
                     ),
@@ -308,7 +312,7 @@ END
             folder_path=folder_path,
             output_dir=output_dir,
             auto_confirm=auto_confirm,
-            state_json={},
+            state_json=initial_state,
             created_at=now,
             updated_at=now,
         )

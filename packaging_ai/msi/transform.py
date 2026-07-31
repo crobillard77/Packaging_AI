@@ -91,11 +91,12 @@ class Win32MsiTransformBuilder:
         *,
         vendor: str,
         app_name: str,
-        footprint_value: str = "1.00",
+        footprint_value: str = "1.0.0",
         architecture: str | None = None,
     ) -> Path:
         """Create an MST adding Package_Footprint registry (FootPrintTemplate.reg semantics).
 
+        Registry name is Vendor+AppName; value is the package version (%Version%).
         For 32-bit MSIs (`architecture` x86 / Intel), the footprint component is
         32-bit so Windows Installer writes to the 32-bit registry view
         (Wow6432Node on 64-bit Windows). Do not embed Wow6432Node in the key path.
@@ -253,7 +254,7 @@ def create_footprint_mst(
     *,
     vendor: str,
     app_name: str,
-    footprint_value: str = "1.00",
+    footprint_value: str = "1.0.0",
     architecture: str | None = None,
 ) -> Path:
     return Win32MsiTransformBuilder().create_footprint_mst(

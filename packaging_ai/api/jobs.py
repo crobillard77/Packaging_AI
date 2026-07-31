@@ -100,9 +100,14 @@ def _to_response(job: JobRecord) -> JobResponse:
             reviewer=plan.reviewer,
         )
     clar = None
+    confidence = job.confidence_score
     if job.status == "awaiting_clarification":
-        raw = job.clarification_json or {}
-        clar = ClarificationNeeded.model_validate(raw) if raw else ClarificationNeeded()
+        # Recompute from state so soft-confirm matches Review_Report confidence.
+        from packaging_ai.graph.clarify_needs import clarification_needs, effective_confidence
+
+        needs = clarification_needs(state)
+        clar = ClarificationNeeded.model_validate(needs)
+        confidence = effective_confidence(state)
     findings = list(state.get("review_findings") or [])
     return JobResponse(
         id=job.id,
@@ -110,7 +115,7 @@ def _to_response(job: JobRecord) -> JobResponse:
         folder_path=job.folder_path,
         output_dir=job.output_dir,
         auto_confirm=job.auto_confirm,
-        confidence_score=job.confidence_score,
+        confidence_score=confidence,
         review_findings=findings,
         clarification_needed=clar,
         plan_summary=plan_summary,
@@ -148,10 +153,15 @@ def create_job(
             )
 
     repo = get_repository()
+    custom = (body.custom_requirements or "").strip()
+    initial_state: dict = {}
+    if custom:
+        initial_state["custom_requirements"] = custom
     job = repo.create_job(
         folder_path=str(folder),
         output_dir=output_dir,
         auto_confirm=body.auto_confirm,
+        state_json=initial_state or None,
     )
     return CreateJobResponse(id=job.id, status=job.status, created_at=job.created_at)
 
@@ -345,6 +355,19 @@ def clarify_job(
                 )
         user_confirmed = True
         clarifications.append("User confirmed current plan despite low confidence.")
+
+    if body.custom_answers and body.custom_answers.strip():
+        from packaging_ai.planning.custom_requirements import CUSTOM_REQ_PREFIX
+
+        clarifications.append(f"{CUSTOM_REQ_PREFIX}{body.custom_answers.strip()}")
+
+    if needs.get("needs_custom_clarify"):
+        already_custom = any(c.startswith("CUSTOM_REQ:") for c in clarifications)
+        if not already_custom:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="custom_answers are required for open custom-requirement questions",
+            )
 
     state["user_clarifications"] = clarifications
     state["user_confirmed"] = user_confirmed

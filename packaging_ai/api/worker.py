@@ -67,6 +67,7 @@ class JobWorker:
         state_blob = job.state_json or {}
         clarifications = list(state_blob.get("user_clarifications") or [])
         user_confirmed = bool(state_blob.get("user_confirmed"))
+        custom_requirements = str(state_blob.get("custom_requirements") or "")
 
         try:
             result = run_packaging(
@@ -76,6 +77,7 @@ class JobWorker:
                 interactive=False,
                 user_clarifications=clarifications,
                 user_confirmed=user_confirmed,
+                custom_requirements=custom_requirements,
             )
         except Exception as exc:
             log.exception("Job %s failed: %s", job_id, exc)
@@ -95,8 +97,24 @@ class JobWorker:
             log.info("Job %s was cancelled; discarding result", job_id)
             return
 
+        # Never drop clarifications / custom_requirements when persisting graph output.
+        merged_clarifications = list(result.get("user_clarifications") or [])
+        for item in clarifications:
+            if item not in merged_clarifications:
+                merged_clarifications.append(item)
+        result["user_clarifications"] = merged_clarifications
+        if custom_requirements and not (result.get("custom_requirements") or "").strip():
+            result["custom_requirements"] = custom_requirements
+
+        # Keep state confidence aligned with Review_Report.json.
+        from packaging_ai.graph.clarify_needs import effective_confidence
+
+        report = result.get("review_report")
+        if report is not None:
+            result["confidence_score"] = float(report.confidence_score)
+
         state_json = serialize_state(result)
-        confidence = float(result.get("confidence_score") or 0.0)
+        confidence = effective_confidence(result)
         needs = clarification_needs(result)
 
         if result.get("awaiting_clarification"):

@@ -34,6 +34,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Auto-confirm when confidence is below 0.75 (does not skip a missing uninstall)",
     )
     parser.add_argument(
+        "--custom-requirements",
+        default=None,
+        help="Free-text custom packaging requirements for LLM plan enrichment",
+    )
+    parser.add_argument(
+        "--custom-requirements-file",
+        default=None,
+        help="Path to a text file with custom packaging requirements",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -90,11 +100,17 @@ def _main_impl(args: argparse.Namespace, log, log_file) -> int:
     if log_file:
         log.info("Log file: %s", log_file)
 
+    custom_requirements = (args.custom_requirements or "").strip()
+    if args.custom_requirements_file:
+        custom_path = Path(args.custom_requirements_file)
+        custom_requirements = custom_path.read_text(encoding="utf-8").strip()
+
     try:
         result = run_packaging(
             folder_path=str(folder),
             output_dir=str(Path(args.output)),
             auto_confirm=bool(args.yes),
+            custom_requirements=custom_requirements or None,
         )
     except Exception as exc:
         log.exception("Packaging failed: %s", exc)

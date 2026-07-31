@@ -24,7 +24,11 @@ class CreateJobRequest(BaseModel):
     )
     auto_confirm: bool = Field(
         default=False,
-        description="Skip soft low-confidence confirm only (cannot skip META/uninstall)",
+        description="Skip soft low-confidence confirm only (cannot skip META/uninstall/custom)",
+    )
+    custom_requirements: str | None = Field(
+        default=None,
+        description="Optional free-text packaging requirements for LLM plan enrichment",
     )
 
 
@@ -38,6 +42,7 @@ class ClarificationNeeded(BaseModel):
     needs_meta: bool = False
     needs_uninstall: bool = False
     needs_soft_confirm: bool = False
+    needs_custom_clarify: bool = False
     suggested_uninstall: str | None = None
     open_questions: list[str] = Field(default_factory=list)
 
@@ -89,6 +94,10 @@ class ClarifyRequest(BaseModel):
     )
     confirm: bool = False
     abort: bool = False
+    custom_answers: str | None = Field(
+        default=None,
+        description="Answers to open custom-requirement questions",
+    )
 
 
 class ArtifactsResponse(BaseModel):

@@ -1,17 +1,27 @@
 <main class="shell">
   <header class="hero">
     <p class="brand">Packaging AI</p>
-    <h1>Create a package</h1>
-    <p class="lede">
-      Point at installer sources on the API host, answer any required clarifications, then get the
-      package path.
-    </p>
+    <h1>{{ stepHeading() }}</h1>
+    <p class="lede">{{ stepLede() }}</p>
+
+    <ol class="steps" aria-label="Wizard steps">
+      @for (s of wizardSteps; track s.id) {
+        <li
+          class="step"
+          [class.active]="step() === s.id"
+          [class.done]="isStepDone(s.id)"
+        >
+          <span class="step-index">{{ $index + 1 }}</span>
+          <span class="step-label">{{ s.label }}</span>
+        </li>
+      }
+    </ol>
   </header>
 
   @if (job(); as j) {
     <div class="status-strip" aria-live="polite">
-      <span>Job <code>{{ j.id }}</code></span>
-      <span class="status">{{ j.status }}</span>
+      <span class="status-id">Job <code>{{ j.id }}</code></span>
+      <span class="status" [attr.data-status]="j.status">{{ j.status.replaceAll('_', ' ') }}</span>
     </div>
   }
 
@@ -22,40 +32,62 @@
   @switch (step()) {
     @case ('sources') {
       <section class="panel" aria-labelledby="sources-title">
-        <h2 id="sources-title">Sources</h2>
-        <p class="hint">
-          Paths must be absolute directories on the API server (not a browser file picker).
-          The API key is injected by IIS (or the local Angular proxy), not entered here.
-        </p>
+        <h2 id="sources-title" class="visually-hidden">Sources</h2>
 
         <label>
-          Input folder
-          <span class="badge required">Required</span>
+          <span class="label-row">
+            Input folder
+            <span class="badge required">Required</span>
+          </span>
           <input
             type="text"
             name="folderPath"
             [(ngModel)]="folderPath"
             placeholder="D:\path\to\installers"
             spellcheck="false"
+            autocomplete="off"
           />
         </label>
 
         <label>
-          Output directory
-          <span class="badge optional">Optional</span>
+          <span class="label-row">
+            Output directory
+            <span class="badge optional">Optional</span>
+          </span>
           <input
             type="text"
             name="outputDir"
             [(ngModel)]="outputDir"
             placeholder="D:\DataShare\Output"
             spellcheck="false"
+            autocomplete="off"
           />
+        </label>
+
+        <label>
+          <span class="label-row">
+            Custom requirements
+            <span class="badge optional">Optional</span>
+          </span>
+          <span class="field-hint">
+            Free-text instructions (e.g. delete a folder on uninstall, import a .reg after install).
+            Unclear items pause for clarification.
+          </span>
+          <textarea
+            name="customRequirements"
+            rows="4"
+            [(ngModel)]="customRequirements"
+            placeholder="On uninstall, delete C:\ProgramData\MyApp\cache&#10;After install, import D:\DataShare\regs\MyApp.reg"
+            spellcheck="false"
+          ></textarea>
         </label>
 
         <label class="checkbox">
           <input type="checkbox" name="autoConfirm" [(ngModel)]="autoConfirm" />
-          Auto-confirm soft low-confidence findings
-          <span class="badge optional">Optional</span>
+          <span>
+            Auto-confirm soft low-confidence findings
+            <span class="badge optional">Optional</span>
+          </span>
         </label>
 
         <div class="actions">
@@ -68,8 +100,11 @@
 
     @case ('progress') {
       <section class="panel" aria-labelledby="progress-title">
-        <h2 id="progress-title">Running</h2>
-        <p class="hint">Polling job status every {{ pollSeconds }} seconds…</p>
+        <h2 id="progress-title" class="visually-hidden">Running</h2>
+        <p class="panel-lead">
+          <span class="pulse" aria-hidden="true"></span>
+          Polling every {{ pollSeconds }} seconds…
+        </p>
 
         @if (job(); as j) {
           @if (j.plan_summary; as plan) {
@@ -90,16 +125,27 @@
                 <dt>Family</dt>
                 <dd>{{ plan.primary_family || '—' }}</dd>
               </div>
+              <div>
+                <dt>Reviewer</dt>
+                <dd>{{ plan.reviewer || '—' }}</dd>
+              </div>
+              <div>
+                <dt>Model</dt>
+                <dd>{{ plan.model || '—' }}</dd>
+              </div>
             </dl>
           }
 
           @if (j.confidence_score !== null) {
-            <p>Confidence: {{ j.confidence_score | number: '1.0-2' }}</p>
+            <p class="confidence">
+              Confidence
+              <strong>{{ j.confidence_score | number: '1.0-2' }}</strong>
+            </p>
           }
 
           @if (j.review_findings.length) {
             <h3>Review findings</h3>
-            <ul>
+            <ul class="findings">
               @for (finding of j.review_findings; track finding) {
                 <li>{{ finding }}</li>
               }
@@ -119,38 +165,92 @@
 
     @case ('clarify') {
       <section class="panel" aria-labelledby="clarify-title">
-        <h2 id="clarify-title">Clarifications</h2>
-        <p class="hint">Provide the information below, then submit to continue packaging.</p>
+        <h2 id="clarify-title" class="visually-hidden">
+          {{ isSoftConfirmOnly() ? 'Confirm to continue' : 'Clarifications' }}
+        </h2>
+        @if (!isSoftConfirmOnly()) {
+          <p class="panel-lead">Answer the items below, then submit to continue.</p>
+        }
+
+        @if (job(); as j) {
+          @if (j.plan_summary; as plan) {
+            @if (plan.reviewer || plan.model) {
+              <p class="review-meta">
+                Reviewer <strong>{{ plan.reviewer || '—' }}</strong>
+                · Model <strong>{{ plan.model || '—' }}</strong>
+              </p>
+            }
+          }
+          @if (isSoftConfirmOnly() && j.confidence_score !== null) {
+            <p class="confidence">
+              Confidence
+              <strong>{{ j.confidence_score | number: '1.0-2' }}</strong>
+              <span class="field-hint" style="display: inline; margin-left: 0.35rem">
+                (threshold 0.75)
+              </span>
+            </p>
+          }
+          @if (isSoftConfirmOnly() && j.review_findings.length) {
+            <h3>Review findings</h3>
+            <ul class="findings">
+              @for (finding of j.review_findings; track finding) {
+                <li>{{ finding }}</li>
+              }
+            </ul>
+          }
+        }
 
         @if (clarification(); as c) {
           @if (c.open_questions.length) {
-            <ul class="questions">
-              @for (q of c.open_questions; track q) {
-                <li>{{ q }}</li>
+            <div class="clarify-questions">
+              @for (q of visibleOpenQuestions(c); track q; let i = $index) {
+                <label class="clarify-question">
+                  <span class="label-row">
+                    <span class="question-num">{{ i + 1 }}.</span>
+                    {{ q }}
+                    @if (c.needs_custom_clarify) {
+                      <span class="badge required">Required</span>
+                    }
+                  </span>
+                  @if (c.needs_custom_clarify) {
+                    <textarea
+                      [name]="'customAnswer' + i"
+                      rows="3"
+                      [(ngModel)]="customAnswerFields[i]"
+                      placeholder="Your answer (full paths, timing, domain FQDN, etc.)"
+                      spellcheck="false"
+                    ></textarea>
+                  }
+                </label>
               }
-            </ul>
+            </div>
           }
 
           @if (c.needs_meta) {
             <label>
-              Metadata (Publisher|AppName|Version)
-              <span class="badge required">Required</span>
+              <span class="label-row">
+                Metadata (Publisher|AppName|Version)
+                <span class="badge required">Required</span>
+              </span>
               <input
                 type="text"
                 name="meta"
                 [(ngModel)]="meta"
                 placeholder="Publisher|AppName|1.2.3"
                 spellcheck="false"
+                autocomplete="off"
               />
             </label>
           }
 
           @if (c.needs_uninstall) {
             <label>
-              Uninstall command
-              <span class="badge required">Required</span>
+              <span class="label-row">
+                Uninstall command
+                <span class="badge required">Required</span>
+              </span>
               @if (c.suggested_uninstall) {
-                <span class="hint">Suggested: {{ c.suggested_uninstall }}</span>
+                <span class="field-hint">Suggested: {{ c.suggested_uninstall }}</span>
               }
               <textarea
                 name="uninstallPaste"
@@ -165,15 +265,23 @@
           @if (c.needs_soft_confirm) {
             <label class="checkbox">
               <input type="checkbox" name="softConfirm" [(ngModel)]="softConfirm" />
-              Confirm and continue
-              <span class="badge optional">Optional</span>
+              <span>
+                Confirm and continue packaging
+                <span class="badge required">Required</span>
+              </span>
             </label>
           }
         }
 
         <div class="actions">
           <button type="button" class="primary" [disabled]="busy()" (click)="submitClarify()">
-            {{ busy() ? 'Submitting…' : 'Submit clarifications' }}
+            @if (busy()) {
+              Submitting…
+            } @else if (isSoftConfirmOnly()) {
+              Confirm and continue
+            } @else {
+              Submit clarifications
+            }
           </button>
           <button type="button" class="danger" [disabled]="busy()" (click)="abortClarify()">
             Abort
@@ -184,9 +292,20 @@
 
     @case ('complete') {
       <section class="panel" aria-labelledby="complete-title">
-        <h2 id="complete-title">Package ready</h2>
+        <h2 id="complete-title" class="visually-hidden">Package ready</h2>
 
         @if (artifacts(); as a) {
+          @if (job(); as j) {
+            @if (j.plan_summary; as plan) {
+              @if (plan.reviewer || plan.model) {
+                <p class="review-meta">
+                  Reviewer <strong>{{ plan.reviewer || '—' }}</strong>
+                  · Model <strong>{{ plan.model || '—' }}</strong>
+                </p>
+              }
+            }
+          }
+
           <p class="package-path">
             Package location
             <code>{{ a.package_dir || 'Not available yet' }}</code>
@@ -211,7 +330,7 @@
             <p class="banner error" role="alert">{{ logsError() }}</p>
           }
           @if (logsBusy() && !selectedLog()) {
-            <p class="hint">Loading logs…</p>
+            <p class="field-hint">Loading logs…</p>
           } @else if (logFiles().length) {
             <ul class="log-list">
               @for (file of logFiles(); track file.name) {
@@ -224,7 +343,7 @@
               }
             </ul>
           } @else if (!logsBusy()) {
-            <p class="hint">No log files found for this job.</p>
+            <p class="field-hint">No log files found for this job.</p>
           }
 
           @if (selectedLog(); as log) {
@@ -232,7 +351,9 @@
               <div class="log-viewer-header">
                 <strong>{{ log.name }}</strong>
                 @if (log.truncated) {
-                  <span class="hint">Showing first {{ formatSize(log.content.length) }} (file is larger)</span>
+                  <span class="field-hint">
+                    Showing first {{ formatSize(log.content.length) }} (file is larger)
+                  </span>
                 }
                 <button type="button" (click)="closeLog()">Close</button>
               </div>
@@ -240,7 +361,7 @@
             </div>
           }
         } @else if (busy()) {
-          <p class="hint">Loading artifact paths…</p>
+          <p class="field-hint">Loading artifact paths…</p>
         }
 
         <div class="actions">
@@ -251,9 +372,14 @@
 
     @case ('error') {
       <section class="panel" aria-labelledby="error-title">
-        <h2 id="error-title">Job ended</h2>
+        <h2 id="error-title" class="visually-hidden">Job ended</h2>
         @if (job(); as j) {
-          <p>Status: <strong>{{ j.status }}</strong></p>
+          <p class="panel-lead">
+            Status:
+            <span class="status inline" [attr.data-status]="j.status">
+              {{ j.status.replaceAll('_', ' ') }}
+            </span>
+          </p>
         }
         <p class="banner error" role="alert">{{ errorMessage() }}</p>
         <div class="actions">

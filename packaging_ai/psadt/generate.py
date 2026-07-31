@@ -149,7 +149,7 @@ def _create_footprint_mst_artifacts(
         mst_path,
         vendor=vendor,
         app_name=app_name,
-        footprint_value="1.00",
+        footprint_value=(plan.app_version or "").strip() or "1.0.0",
         architecture=plan.app_arch or None,
     )
 
@@ -174,7 +174,8 @@ def _create_footprint_mst_artifacts(
             "assumptions": list(plan.assumptions)
             + [
                 f"Generated footprint MST {mst_name} from FootPrintTemplate.reg "
-                f"(registry name '{footprint_reg_name}', {reg_view}; no .reg file in Package/)."
+                f"(registry name '{footprint_reg_name}', value '{(plan.app_version or '').strip() or '1.0.0'}', "
+                f"{reg_view}; no .reg file in Package/)."
             ],
         }
     )
@@ -216,13 +217,40 @@ def _fill_template(script: str, plan: InstallPlan) -> str:
         or "# (no uninstall command generated)"
     )
 
-    pre = "\n".join(f"        # {s}" for s in plan.pre_install_steps) or "        # (none)"
-    if plan.post_install_steps:
-        post = "\n".join(f"        {s}" for s in plan.post_install_steps)
+    if plan.pre_install_steps:
+        pre = "\n".join(f"        {s}" for s in plan.pre_install_steps)
+    else:
+        pre = "        # (none)"
+
+    post_steps = list(plan.post_install_steps or [])
+    post_uninstall_steps = list(plan.post_uninstall_steps or [])
+    if plan.primary_family not in {InstallerFamily.MSI, InstallerFamily.MST}:
+        # EXE: footprint registry lines must be last (after any custom requirements).
+        arch = (plan.app_arch or "").strip().lower()
+        wow = " -Wow6432Node" if arch == "x86" else ""
+        set_line = (
+            "Set-RegistryKey -Key 'HKEY_LOCAL_MACHINE\\SOFTWARE\\Package_Footprint' "
+            f"-Name \"$($appVendor)$($appName)\" -Value '1.00' -Type 'String'{wow}"
+        )
+        remove_line = (
+            "Remove-RegistryKey -Key 'HKEY_LOCAL_MACHINE\\SOFTWARE\\Package_Footprint' "
+            f"-Name \"$($appVendor)$($appName)\"{wow}"
+        )
+        post_steps = [
+            s for s in post_steps if not _is_exe_footprint_set_line(s)
+        ]
+        post_uninstall_steps = [
+            s for s in post_uninstall_steps if not _is_exe_footprint_remove_line(s)
+        ]
+        post_steps.append(set_line)
+        post_uninstall_steps.append(remove_line)
+
+    if post_steps:
+        post = "\n".join(f"        {s}" for s in post_steps)
     else:
         post = "        # (none)"
-    if plan.post_uninstall_steps:
-        post_uninstall = "\n".join(f"        {s}" for s in plan.post_uninstall_steps)
+    if post_uninstall_steps:
+        post_uninstall = "\n".join(f"        {s}" for s in post_uninstall_steps)
     else:
         post_uninstall = "        # (none)"
 
@@ -252,6 +280,16 @@ def _fill_template(script: str, plan: InstallPlan) -> str:
         1,
     )
     return script
+
+
+def _is_exe_footprint_set_line(step: str) -> bool:
+    s = step or ""
+    return "Set-RegistryKey" in s and "Package_Footprint" in s
+
+
+def _is_exe_footprint_remove_line(step: str) -> bool:
+    s = step or ""
+    return "Remove-RegistryKey" in s and "Package_Footprint" in s
 
 
 def _ps(value: str) -> str:

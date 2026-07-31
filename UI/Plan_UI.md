@@ -139,7 +139,8 @@ One composition: a linear wizard. Show only the active step plus a compact statu
 |-------|----------|---------|--------|
 | Input folder | Yes | `folder_path` | Absolute path on API host |
 | Output directory | No | `output_dir` | Absolute override; leave empty for API default |
-| Auto-confirm soft findings | No | `auto_confirm` | Skips soft low-confidence confirm only; cannot skip META/uninstall |
+| Custom requirements | No | `custom_requirements` | Free-text; LLM merges into plan step lists; unclear items pause for clarify |
+| Auto-confirm soft findings | No | `auto_confirm` | Skips soft low-confidence confirm only; cannot skip META/uninstall/custom |
 
 **CTA:** Create package → `POST /v1/jobs`.
 
@@ -169,9 +170,10 @@ Drive visibility from `clarification_needed`:
 |------|------------|-------|------------|
 | `needs_meta` | Text: `Publisher\|AppName\|Version` | **Required** | `meta` |
 | `needs_uninstall` | Textarea for uninstall line | **Required** | Prefer `uninstall_paste`; show `suggested_uninstall` as hint if set |
+| `needs_custom_clarify` | Textarea for answers to custom-requirement questions | **Required** | `custom_answers` |
 | `needs_soft_confirm` | Checkbox “Confirm and continue” | **Optional** | `confirm: true` |
 
-Also show `open_questions` as read-only guidance when present.
+Also show `open_questions` as read-only guidance when present. When `needs_custom_clarify` is true, label those questions **Required**.
 
 **CTAs:**
 
@@ -184,8 +186,9 @@ After submit, return to Progress polling.
 
 Clarification label rules for the operator:
 
-- META and uninstall: always show badge **Required** when their `needs_*` flag is true.
+- META, uninstall, and custom answers: always show badge **Required** when their `needs_*` flag is true.
 - Soft confirm: show badge **Optional** when `needs_soft_confirm` is true (mirrors CLI `-y` / `auto_confirm` semantics at create time; at clarify pause the UI still presents the confirm control when requested).
+- Custom clarify is never skipped by `auto_confirm`.
 
 ### Step 4 — Complete (succeeded)
 
@@ -214,9 +217,9 @@ Production: same origin via IIS, or configured `apiBaseUrl`.
 | UI action | Method / path | Auth | Request | Success response |
 |-----------|---------------|------|---------|------------------|
 | Health (optional) | `GET /health` | No | — | `status`, `version`, `job_store`, `sql_ok` |
-| Create job | `POST /v1/jobs` | Yes | `{ folder_path, output_dir?, auto_confirm? }` | `202` → `{ id, status, created_at }` |
+| Create job | `POST /v1/jobs` | Yes | `{ folder_path, output_dir?, auto_confirm?, custom_requirements? }` | `202` → `{ id, status, created_at }` |
 | Poll job | `GET /v1/jobs/{id}` | Yes | — | `JobResponse` (status, plan, clarification_needed, error, …) |
-| Submit clarify | `POST /v1/jobs/{id}/clarify` | Yes | `{ action: "submit", meta?, uninstall_paste?, uninstall_command?, confirm? }` | Updated `JobResponse` |
+| Submit clarify | `POST /v1/jobs/{id}/clarify` | Yes | `{ action: "submit", meta?, uninstall_paste?, uninstall_command?, confirm?, custom_answers? }` | Updated `JobResponse` |
 | Abort clarify | `POST /v1/jobs/{id}/clarify` | Yes | `{ abort: true }` or `{ action: "abort" }` | Updated `JobResponse` |
 | Cancel | `POST /v1/jobs/{id}/cancel` | Yes | — | Updated `JobResponse` |
 | Artifacts | `GET /v1/jobs/{id}/artifacts` | Yes | — | `ArtifactsResponse` paths |
@@ -227,7 +230,8 @@ Production: same origin via IIS, or configured `apiBaseUrl`.
 {
   "folder_path": "D:\\absolute\\path\\to\\installer\\folder",
   "output_dir": null,
-  "auto_confirm": false
+  "auto_confirm": false,
+  "custom_requirements": "On uninstall, delete C:\\ProgramData\\MyApp\\cache"
 }
 ```
 
@@ -238,6 +242,7 @@ Production: same origin via IIS, or configured `apiBaseUrl`.
   "action": "submit",
   "meta": "Publisher|AppName|1.2.3",
   "uninstall_paste": "\"C:\\Program Files\\App\\uninstall.exe\" /S",
+  "custom_answers": "Delete C:\\ProgramData\\MyApp\\cache on uninstall.",
   "confirm": true,
   "abort": false
 }

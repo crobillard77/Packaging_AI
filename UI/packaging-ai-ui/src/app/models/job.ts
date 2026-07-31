@@ -10,6 +10,7 @@ export interface CreateJobRequest {
   folder_path: string;
   output_dir?: string | null;
   auto_confirm?: boolean;
+  custom_requirements?: string | null;
 }
 
 export interface CreateJobResponse {
@@ -22,6 +23,7 @@ export interface ClarificationNeeded {
   needs_meta: boolean;
   needs_uninstall: boolean;
   needs_soft_confirm: boolean;
+  needs_custom_clarify: boolean;
   suggested_uninstall: string | null;
   open_questions: string[];
 }
@@ -59,6 +61,7 @@ export interface ClarifyRequest {
   uninstall_paste?: string | null;
   confirm?: boolean;
   abort?: boolean;
+  custom_answers?: string | null;
 }
 
 export interface ArtifactsResponse {

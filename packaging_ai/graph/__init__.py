@@ -3,6 +3,7 @@ from __future__ import annotations
 from langgraph.graph import END, START, StateGraph
 
 from packaging_ai.graph.nodes import (
+    apply_custom_node,
     classify_node,
     clarify_node,
     generate_node,
@@ -24,6 +25,7 @@ def build_graph():
     graph.add_node("scan", scan_node)
     graph.add_node("classify", classify_node)
     graph.add_node("plan", plan_node)
+    graph.add_node("apply_custom", apply_custom_node)
     graph.add_node("vuln_scan", vuln_scan_node)
     graph.add_node("review", review_node)
     graph.add_node("clarify", clarify_node)
@@ -32,7 +34,8 @@ def build_graph():
     graph.add_edge(START, "scan")
     graph.add_edge("scan", "classify")
     graph.add_edge("classify", "plan")
-    graph.add_edge("plan", "vuln_scan")
+    graph.add_edge("plan", "apply_custom")
+    graph.add_edge("apply_custom", "vuln_scan")
     graph.add_edge("vuln_scan", "review")
     graph.add_conditional_edges(
         "review",
@@ -56,6 +59,7 @@ def run_packaging(
     interactive: bool = True,
     user_clarifications: list[str] | None = None,
     user_confirmed: bool = False,
+    custom_requirements: str | None = None,
 ) -> PackagingState:
     begin_run_capture()
     log.info(
@@ -73,6 +77,7 @@ def run_packaging(
         "user_confirmed": user_confirmed,
         "interactive": interactive,
         "awaiting_clarification": False,
+        "custom_requirements": (custom_requirements or "").strip(),
         "user_clarifications": list(user_clarifications or []),
         "detected_installers": [],
         "confidence_score": 0.0,

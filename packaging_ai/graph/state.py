@@ -29,6 +29,7 @@ class PackagingState(TypedDict, total=False):
     user_confirmed: bool
     interactive: bool  # False for API: clarify pauses instead of input()
     awaiting_clarification: bool
+    custom_requirements: str  # free-text operator requirements for LLM apply
     detected_installers: list[DetectedInstaller]
     install_plan: InstallPlan | None
     vulnerability_report: VulnerabilityReport | None

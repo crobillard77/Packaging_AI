@@ -72,15 +72,20 @@ def build_install_plan(
         )
     if primary.family == InstallerFamily.MSI and not product_code:
         open_questions.append("MSI ProductCode could not be read; uninstall may need adjustment.")
-    if not name:
-        open_questions.append("Application name is missing; confirm app name for PSADT variables.")
-    if not version:
-        open_questions.append("Application version is missing; confirm version for PSADT variables.")
-    if primary.family != InstallerFamily.MSI and primary.family != InstallerFamily.MST:
-        if not vendor or not name or not version:
+    # EXE Publisher|AppName|Version is collected once via needs_meta / META clarification.
+    # Do not also emit separate open_questions for the same fields (avoids duplicate prompts).
+    exe_meta_incomplete = (
+        primary.family not in {InstallerFamily.MSI, InstallerFamily.MST}
+        and (not vendor or not name or not version)
+    )
+    if not exe_meta_incomplete:
+        if not name:
             open_questions.append(
-                "EXE Publisher, AppName, and/or Version could not be read; "
-                "confirm as Publisher|AppName|Version."
+                "Application name is missing; confirm app name for PSADT variables."
+            )
+        if not version:
+            open_questions.append(
+                "Application version is missing; confirm version for PSADT variables."
             )
     if len([d for d in detected if d.is_primary_candidate]) > 1:
         open_questions.append(
@@ -122,7 +127,7 @@ def build_install_plan(
             f'-Transform "$scriptDirectory\\{footprint_mst_name}"'
         )
 
-    # EXE → footprint via Set-RegistryKey / Remove-RegistryKey (same key as FootPrint template)
+    # EXE → footprint via Set-RegistryKey / Remove-RegistryKey (must be last in post sections)
     if primary.family not in {InstallerFamily.MSI, InstallerFamily.MST}:
         exe_arch = _resolve_arch(primary)
         footprint_reg_name = f"{app_vendor}{app_name}".strip() or "PackageFootprint"
@@ -130,9 +135,10 @@ def build_install_plan(
         post_uninstall_steps = [_exe_footprint_remove_registry(exe_arch)]
         wow = " -Wow6432Node" if (exe_arch or "").lower() == "x86" else ""
         assumptions.append(
-            "EXE footprint: Post-Installation Set-RegistryKey and Post-Uninstallation "
-            "Remove-RegistryKey for HKLM\\SOFTWARE\\Package_Footprint"
-            f"{wow} (name '{footprint_reg_name}' / $($appVendor)$($appName), value 1.00)."
+            "EXE footprint: Post-Installation ends with Set-RegistryKey and "
+            "Post-Uninstallation ends with Remove-RegistryKey for "
+            f"HKLM\\SOFTWARE\\Package_Footprint{wow} "
+            "(name $($appVendor)$($appName), value '1.00')."
         )
 
     app_arch = _resolve_arch(primary)
@@ -309,7 +315,7 @@ def _deploy_script_name(
 
 
 def _exe_footprint_set_registry(architecture: str = "") -> str:
-    """PSADT Set-RegistryKey matching FootPrintTemplate.reg semantics."""
+    """PSADT Set-RegistryKey — must be the last Post-Installation line for EXE packages."""
     wow = " -Wow6432Node" if (architecture or "").lower() == "x86" else ""
     return (
         "Set-RegistryKey -Key 'HKEY_LOCAL_MACHINE\\SOFTWARE\\Package_Footprint' "
@@ -318,7 +324,7 @@ def _exe_footprint_set_registry(architecture: str = "") -> str:
 
 
 def _exe_footprint_remove_registry(architecture: str = "") -> str:
-    """PSADT Remove-RegistryKey for the EXE footprint value."""
+    """PSADT Remove-RegistryKey — must be the last Post-Uninstallation line for EXE packages."""
     wow = " -Wow6432Node" if (architecture or "").lower() == "x86" else ""
     return (
         "Remove-RegistryKey -Key 'HKEY_LOCAL_MACHINE\\SOFTWARE\\Package_Footprint' "

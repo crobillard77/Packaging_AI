@@ -1,4 +1,10 @@
 /* Global base — component owns the page composition. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 html,
 body {
   margin: 0;
@@ -6,5 +12,8 @@ body {
 }
 
 body {
-  background: #e7ece9;
+  color: #1a2420;
+  font-family: 'Source Sans 3', 'Segoe UI', sans-serif;
+  background: #d8e0db;
+  -webkit-font-smoothing: antialiased;
 }

@@ -27,10 +27,16 @@ def clarify_node(state: PackagingState) -> dict:
     needs = clarification_needs(state)
     needs_meta = bool(needs["needs_meta"])
     needs_uninstall = bool(needs["needs_uninstall"])
+    needs_custom_clarify = bool(needs.get("needs_custom_clarify"))
     plan = state.get("install_plan")
 
-    # --yes may skip soft clarification, but never EXE metadata or uninstall prompts
-    if state.get("auto_confirm") and not needs_meta and not needs_uninstall:
+    # --yes may skip soft clarification, but never EXE metadata, uninstall, or custom reqs
+    if (
+        state.get("auto_confirm")
+        and not needs_meta
+        and not needs_uninstall
+        and not needs_custom_clarify
+    ):
         log.info("Auto-confirming soft low-confidence review (--yes)")
         return {
             "user_clarifications": [
@@ -43,10 +49,12 @@ def clarify_node(state: PackagingState) -> dict:
     findings = state.get("review_findings") or []
     score = state.get("confidence_score", 0.0)
     log.info(
-        "Clarification required (confidence=%.2f, needs_meta=%s, needs_uninstall=%s, interactive=%s)",
+        "Clarification required (confidence=%.2f, needs_meta=%s, needs_uninstall=%s, "
+        "needs_custom_clarify=%s, interactive=%s)",
         score,
         needs_meta,
         needs_uninstall,
+        needs_custom_clarify,
         state.get("interactive", True),
     )
 
@@ -140,6 +148,30 @@ def clarify_node(state: PackagingState) -> dict:
         log.info("Uninstall command accepted: %s", normalized)
         return {
             "user_clarifications": [f"UNINSTALL_CMD:{normalized}"],
+            "user_confirmed": False,
+        }
+
+    if needs_custom_clarify:
+        from packaging_ai.planning.custom_requirements import CUSTOM_REQ_PREFIX
+
+        print(
+            "\nCustom requirements need clarification.\n"
+            "Answer the open questions below (paths, timing: pre/post/uninstall).\n"
+            "Type 'abort' to cancel:"
+        )
+        try:
+            answer = input("> ").strip()
+        except EOFError:
+            answer = "abort"
+        if answer.lower() in {"abort", "quit", "exit", "n", "no"}:
+            return {"error": "Aborted by user during clarification.", "user_clarifications": []}
+        if not answer:
+            return {
+                "error": "Custom requirement answers are required.",
+                "user_clarifications": [],
+            }
+        return {
+            "user_clarifications": [f"{CUSTOM_REQ_PREFIX}{answer}"],
             "user_confirmed": False,
         }
 
